@@ -19,3 +19,4 @@ ota_private.key.*
 .idea/
 .vscode/
 *.log
+go压缩器开发计划.md
