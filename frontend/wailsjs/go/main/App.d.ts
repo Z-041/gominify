@@ -12,6 +12,8 @@ export function ClearHistory():Promise<void>;
 
 export function CompressPaths(arg1:Array<string>,arg2:minifier.Options):Promise<main.BatchResult>;
 
+export function Forget(arg1:Array<string>):Promise<void>;
+
 export function GetHistory():Promise<Array<history.Entry>>;
 
 export function GetVersion():Promise<string>;

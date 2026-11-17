@@ -91,7 +91,8 @@ func Minify(name string, src []byte, opts Options) ([]byte, error) {
 	}
 
 	var licenses [][]byte
-	if opts.KeepCopyright {
+	// 许可注释前缀只对 JS/CSS 合法；HTML/JSON 前置 /*! ... */ 会破坏文档结构。
+	if opts.KeepCopyright && (lang == "js" || lang == "css") {
 		licenses = licenseRe.FindAll(src, -1)
 	}
 

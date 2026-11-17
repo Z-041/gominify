@@ -9,6 +9,31 @@ const emit = defineEmits<{ (e: 'copy'): void; (e: 'export'): void }>()
 
 const tab = ref<'out' | 'diff'>('out')
 
+// 大文件只渲染前若干行，避免 v-html 卡死界面；复制与导出始终使用完整内容。
+const MAX_PREVIEW_CHARS = 200_000
+const MAX_PREVIEW_LINES = 4000
+
+interface CodeView {
+  html: string
+  truncated: boolean
+}
+
+function render(code: string, lang: string): CodeView {
+  if (!code) return { html: '', truncated: false }
+  let text = code
+  let truncated = false
+  if (text.length > MAX_PREVIEW_CHARS) {
+    text = text.slice(0, MAX_PREVIEW_CHARS)
+    truncated = true
+  }
+  const lines = text.split('\n')
+  if (lines.length > MAX_PREVIEW_LINES) {
+    text = lines.slice(0, MAX_PREVIEW_LINES).join('\n')
+    truncated = true
+  }
+  return { html: highlight(text, lang), truncated }
+}
+
 watch(
   () => props.file?.id,
   () => {
@@ -16,8 +41,12 @@ watch(
   },
 )
 
-const outHtml = computed(() => (props.file ? highlight(props.file.output, props.file.language) : ''))
-const srcHtml = computed(() => (props.file ? highlight(props.file.source || '', props.file.language) : ''))
+const outView = computed<CodeView>(() =>
+  props.file ? render(props.file.output, props.file.language) : { html: '', truncated: false },
+)
+const srcView = computed<CodeView>(() =>
+  props.file ? render(props.file.source || '', props.file.language) : { html: '', truncated: false },
+)
 
 const errorLines = computed(() => {
   const f = props.file
@@ -49,9 +78,12 @@ const errorLines = computed(() => {
         <span class="dot"></span>
         {{ file.name }} · {{ formatSize(file.minifiedSize) }} · 压缩耗时 {{ file.elapsedMs }}ms
       </div>
+      <div v-if="outView.truncated" class="trunc-hint">
+        内容较大，仅预览前 {{ MAX_PREVIEW_LINES }} 行；完整结果可复制或导出
+      </div>
       <div class="code">
         <div class="gutter">1</div>
-        <div class="code-body" v-html="outHtml"></div>
+        <div class="code-body" v-html="outView.html"></div>
       </div>
     </div>
 
@@ -60,7 +92,8 @@ const errorLines = computed(() => {
       <div class="diff-col">
         <div class="diff-col-head"><b>原始</b><span class="size">{{ formatSize(file.originalSize) }}</span></div>
         <div class="diff-body">
-          <div class="code"><div class="code-body" v-html="srcHtml"></div></div>
+          <div v-if="srcView.truncated" class="trunc-hint">仅预览前 {{ MAX_PREVIEW_LINES }} 行</div>
+          <div class="code"><div class="code-body" v-html="srcView.html"></div></div>
         </div>
       </div>
       <div class="diff-col">
@@ -69,7 +102,8 @@ const errorLines = computed(() => {
           <span class="size">{{ formatSize(file.minifiedSize) }} · {{ formatRatio(file.ratio) }}</span>
         </div>
         <div class="diff-body">
-          <div class="code"><div class="code-body" v-html="outHtml"></div></div>
+          <div v-if="outView.truncated" class="trunc-hint">仅预览前 {{ MAX_PREVIEW_LINES }} 行</div>
+          <div class="code"><div class="code-body" v-html="outView.html"></div></div>
         </div>
       </div>
     </div>
@@ -169,6 +203,14 @@ const errorLines = computed(() => {
   height: 6px;
   border-radius: 50%;
   background: var(--green);
+}
+.trunc-hint {
+  padding: 7px 16px;
+  font-size: 11px;
+  color: var(--yellow);
+  background: rgba(232, 197, 71, 0.08);
+  border-bottom: 1px solid rgba(232, 197, 71, 0.18);
+  font-family: var(--mono);
 }
 .code {
   font-family: var(--mono);

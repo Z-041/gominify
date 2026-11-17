@@ -18,6 +18,10 @@ export function CompressPaths(arg1, arg2) {
   return window['go']['main']['App']['CompressPaths'](arg1, arg2);
 }
 
+export function Forget(arg1) {
+  return window['go']['main']['App']['Forget'](arg1);
+}
+
 export function GetHistory() {
   return window['go']['main']['App']['GetHistory']();
 }

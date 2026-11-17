@@ -134,6 +134,20 @@ func TestRecompressKeepsIDAndStructure(t *testing.T) {
 	}
 }
 
+func TestForgetRemovesResult(t *testing.T) {
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{"a.js": "var a = 1;"})
+
+	app := NewApp()
+	batch := app.CompressPaths([]string{filepath.Join(root, "a.js")}, minifier.Options{})
+	id := batch.Results[0].ID
+
+	app.Forget([]string{id})
+	if _, err := app.SaveResult(id, t.TempDir()); err == nil {
+		t.Fatal("Forget 之后不应还能导出")
+	}
+}
+
 func TestSaveResultSingleFile(t *testing.T) {
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{"solo.css": "a { color: red; }"})

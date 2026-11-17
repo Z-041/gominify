@@ -8,6 +8,7 @@ import HistoryDialog from './components/HistoryDialog.vue'
 import Icon from './components/Icon.vue'
 import {
   compress,
+  forget,
   getVersion,
   isWails,
   onFileDrop,
@@ -65,20 +66,27 @@ async function addPaths(paths: string[]) {
   try {
     const batch = await compress(paths, { ...options })
     const results = batch.results
+    const replaced: string[] = []
     for (const r of results) {
       const idx = files.value.findIndex((f) => f.path === r.path)
-      if (idx >= 0) files.value.splice(idx, 1, r)
-      else files.value.push(r)
+      if (idx >= 0) {
+        replaced.push(files.value[idx].id)
+        files.value.splice(idx, 1, r)
+      } else {
+        files.value.push(r)
+      }
     }
+    if (replaced.length) void forget(replaced)
     const firstOk = results.find((r) => !r.error)
     selectedId.value = firstOk?.id ?? results[0]?.id ?? selectedId.value
 
     if (!results.length) {
-      toast(batch.warnings[0] ?? '没有找到可压缩的文件')
+      const why = batch.skipped ? `（已跳过 ${batch.skipped} 个不支持或已压缩的文件）` : ''
+      toast((batch.warnings[0] ?? '没有找到可压缩的文件') + why)
       return
     }
     const parts = [`已处理 ${results.length} 个文件`]
-    if (batch.skipped) parts.push(`跳过 ${batch.skipped} 个不支持的文件`)
+    if (batch.skipped) parts.push(`跳过 ${batch.skipped} 个不支持或已压缩的文件`)
     if (batch.truncated) parts.push('已达单次导入上限')
     if (batch.warnings.length) {
       const extra = batch.warnings.length > 1 ? ` 等 ${batch.warnings.length} 条` : ''
@@ -132,6 +140,7 @@ function removeFile(id: string) {
   const idx = files.value.findIndex((f) => f.id === id)
   if (idx < 0) return
   files.value.splice(idx, 1)
+  void forget([id])
   if (selectedId.value === id) selectedId.value = files.value[0]?.id ?? ''
 }
 

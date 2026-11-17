@@ -95,6 +95,16 @@ export async function clearHistory(): Promise<void> {
   await api().ClearHistory()
 }
 
+/** 释放后端已移除文件的结果内存。 */
+export async function forget(ids: string[]): Promise<void> {
+  if (!api() || !ids.length) return
+  try {
+    await api().Forget(ids)
+  } catch {
+    /* 释放失败不影响界面 */
+  }
+}
+
 export async function checkUpdate(): Promise<UpdateInfo> {
   if (!api()) {
     await sleep(600)

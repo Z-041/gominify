@@ -1,6 +1,7 @@
 package minifier
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -95,6 +96,35 @@ func TestLineOf(t *testing.T) {
 	}
 	if got := LineOf(errors.New("boom")); got != 0 {
 		t.Errorf("LineOf without line info = %d; want 0", got)
+	}
+}
+
+func TestKeepCopyrightOnlyForJSAndCSS(t *testing.T) {
+	jsSrc := []byte("/*! MIT License */\nvar a = 1;\n")
+	jsOut, err := Minify("a.js", jsSrc, Options{KeepCopyright: true})
+	if err != nil {
+		t.Fatalf("js: %v", err)
+	}
+	if !strings.HasPrefix(string(jsOut), "/*! MIT License */") {
+		t.Errorf("js 许可注释丢失: %q", jsOut)
+	}
+
+	htmlSrc := []byte("<script>/*! MIT License */var a=1</script>")
+	htmlOut, err := Minify("a.html", htmlSrc, Options{KeepCopyright: true})
+	if err != nil {
+		t.Fatalf("html: %v", err)
+	}
+	if strings.HasPrefix(string(htmlOut), "/*!") {
+		t.Errorf("html 不应前置 JS 注释: %q", htmlOut)
+	}
+
+	jsonSrc := []byte(`{"note":"/*! not a comment */"}`)
+	jsonOut, err := Minify("a.json", jsonSrc, Options{KeepCopyright: true})
+	if err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if !json.Valid(jsonOut) {
+		t.Errorf("json 被许可注释破坏: %q", jsonOut)
 	}
 }
 

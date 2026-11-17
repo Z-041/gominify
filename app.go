@@ -125,20 +125,34 @@ func (a *App) Recompress(ids []string, opts minifier.Options) []FileResult {
 	for _, id := range ids {
 		a.mu.Lock()
 		e, ok := a.results[id]
+		path := ""
+		if ok {
+			path = e.res.Path
+		}
 		a.mu.Unlock()
 		if !ok {
 			out = append(out, FileResult{ID: id, Error: "结果不存在或已过期"})
 			continue
 		}
 
-		res := minifier.MinifyFile(e.res.Path, opts)
+		res := minifier.MinifyFile(path, opts)
 		a.mu.Lock()
 		e.res = res
 		e.opts = opts
+		fr := fileResult(id, e)
 		a.mu.Unlock()
-		out = append(out, fileResult(id, e))
+		out = append(out, fr)
 	}
 	return out
+}
+
+// Forget 释放前端已移除的结果，避免长时间会话持续占用内存。
+func (a *App) Forget(ids []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, id := range ids {
+		delete(a.results, id)
+	}
 }
 
 func (a *App) compressRef(ref minifier.FileRef, opts minifier.Options) FileResult {
