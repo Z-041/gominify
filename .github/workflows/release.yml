@@ -1,0 +1,253 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号，如 1.0.2（不要带 v）'
+        required: true
+      notes:
+        description: '更新说明（留空则使用默认文案）'
+        required: false
+        default: ''
+      publish:
+        description: '创建 Release 并回写 OTA 清单'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      notes: ${{ steps.meta.outputs.notes }}
+    steps:
+      - name: 解析版本号
+        id: meta
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_NOTES: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="${REF_NAME#v}"
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "版本号不合法: $VERSION" >&2
+            exit 1
+          fi
+          NOTES="${INPUT_NOTES:-GoMinify v$VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "notes<<NOTES_EOF"
+            echo "$NOTES"
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - key: windows-amd64
+            os: windows-latest
+          - key: linux-amd64
+            os: ubuntu-24.04
+          - key: darwin-amd64
+            os: macos-15-intel
+          - key: darwin-arm64
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装 Linux 依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev build-essential pkg-config
+
+      - name: 安装 Wails CLI
+        shell: bash
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: 构建前端
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: 同步 productVersion
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('wails.json','utf8'));p.info.productVersion=process.env.VERSION;fs.writeFileSync('wails.json',JSON.stringify(p,null,2)+'\n')"
+
+      - name: 单元测试
+        if: runner.os == 'Linux'
+        run: go test -tags webkit2_41 ./...
+
+      - name: 构建应用
+        shell: bash
+        run: |
+          TAGS=""
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            TAGS="-tags webkit2_41"
+          fi
+          wails build -clean -s $TAGS -ldflags "-X main.Version=$VERSION"
+
+      - name: 收集产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist release
+          case "${{ matrix.key }}" in
+            windows-amd64)
+              cp build/bin/GoMinify.exe dist/GoMinify-windows-amd64.exe
+              ;;
+            linux-amd64)
+              cp build/bin/GoMinify dist/GoMinify-linux-amd64
+              chmod +x dist/GoMinify-linux-amd64
+              ;;
+            darwin-*)
+              cp "build/bin/GoMinify.app/Contents/MacOS/GoMinify" "dist/GoMinify-${{ matrix.key }}"
+              chmod +x "dist/GoMinify-${{ matrix.key }}"
+              ditto -c -k --keepParent build/bin/GoMinify.app "release/GoMinify-${{ matrix.key }}.app.zip"
+              ;;
+          esac
+          ls -l dist release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ota-${{ matrix.key }}
+          path: dist/
+          retention-days: 3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.key }}
+          path: release/
+          if-no-files-found: ignore
+          retention-days: 3
+
+  release:
+    needs: [meta, build]
+    if: startsWith(github.ref, 'refs/tags/') || inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      NOTES: ${{ needs.meta.outputs.notes }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ota-*
+          merge-multiple: true
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          merge-multiple: true
+          path: release
+
+      - name: 整理产物
+        run: |
+          set -euo pipefail
+          chmod +x dist/GoMinify-linux-amd64 dist/GoMinify-darwin-*
+          ls -l dist release
+
+      - name: 写入签名私钥
+        env:
+          OTA_PRIVATE_KEY: ${{ secrets.OTA_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$OTA_PRIVATE_KEY" | base64 -d > "$RUNNER_TEMP/ota.key"
+          echo "OTA_KEY_FILE=$RUNNER_TEMP/ota.key" >> "$GITHUB_ENV"
+
+      - name: 发布 Release
+        run: |
+          set -euo pipefail
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" dist/* release/* --clobber
+          else
+            gh release create "v$VERSION" --title "v$VERSION" --notes "$NOTES" dist/* release/*
+          fi
+
+      - name: 回写 OTA 清单
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3; do
+            git fetch origin main
+            git reset --hard origin/main
+            go run ./cmd/ota-publish \
+              -dir dist \
+              -version "$VERSION" \
+              -notes "$NOTES" \
+              -base-url "https://github.com/${{ github.repository }}/releases/download/v$VERSION" \
+              -key "$OTA_KEY_FILE" \
+              -out ota/latest.json
+            git add ota/latest.json
+            if git diff --cached --quiet; then
+              echo "清单无变化，跳过提交"
+              exit 0
+            fi
+            git commit -m "chore: update OTA manifest to v$VERSION"
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "第 $i 次推送失败，重试…"
+            sleep 3
+          done
+          echo "清单回写失败" >&2
+          exit 1
+
+      - name: 清理私钥
+        if: always()
+        run: rm -f "$RUNNER_TEMP/ota.key"

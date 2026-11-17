@@ -25,6 +25,7 @@
 
 ```
 gominify/
+├── .github/workflows/       # CI：三平台构建 + Release + OTA 清单
 ├── main.go                  # Wails 入口，窗口与资源嵌入
 ├── app.go                   # 绑定给前端的 API：压缩、导出、更新
 ├── internal/
@@ -57,6 +58,40 @@ go test ./internal/...         # 引擎与更新模块单测
 ```
 
 Windows / macOS 的安装包需在对应系统上构建（或在 CI 里用矩阵构建）。
+
+---
+
+## CI 三平台构建与发布
+
+`.github/workflows/release.yml` 在 GitHub Actions 上原生构建四个平台：
+
+| 平台 | Runner | OTA 产物 | 安装包 |
+|---|---|---|---|
+| windows-amd64 | windows-latest | `GoMinify-windows-amd64.exe` | 同左 |
+| linux-amd64 | ubuntu-24.04 | `GoMinify-linux-amd64` | 同左 |
+| darwin-amd64 | macos-15-intel | `GoMinify-darwin-amd64` | `.app.zip` |
+| darwin-arm64 | macos-15 | `GoMinify-darwin-arm64` | `.app.zip` |
+
+发布流程：
+
+1. 仓库 Secrets 添加 `OTA_PRIVATE_KEY`，内容为本机 `ota_private.key` 的文本（base64 seed）
+2. 推送 tag 自动发布：
+
+```bash
+git tag v1.0.2
+git push origin v1.0.2
+```
+
+CI 会完成：四平台构建 → 创建 Release 并上传产物与 macOS 安装包 → 用私钥签名 `ota/latest.json` → 提交回 main。
+
+也可以在 Actions 页面手动运行 `Build & Release`：填入版本号，`publish` 关闭时只构建并保留 artifact（3 天），不创建 Release、不改清单。
+
+注意事项：
+
+- Linux 产物依赖 webkit2gtk-4.1（Ubuntu 24.04+），22.04 及更早版本无法直接运行
+- macOS 未做代码签名/公证，首次打开需右键选择“打开”，或执行 `xattr -dr com.apple.quarantine GoMinify.app`
+- `raw.githubusercontent.com` 有约 5 分钟 CDN 缓存，发布后客户端可能短时读到旧清单
+- 若 main 分支保护阻止 bot 推送，可改用 PAT Secret 或将清单回写改成 PR
 
 ---
 
