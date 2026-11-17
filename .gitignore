@@ -1,0 +1,21 @@
+# 构建产物
+build/bin/
+dist/
+*.exe
+*.app
+*.dmg
+
+# 前端依赖与产物（由 wails build 生成）
+frontend/node_modules/
+frontend/dist/
+
+# OTA 签名私钥：绝不入库
+ota_private.key
+*.key
+ota_private.key.*
+
+# 系统与编辑器
+.DS_Store
+.idea/
+.vscode/
+*.log

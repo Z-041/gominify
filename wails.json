@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "gominify",
+  "outputfilename": "GoMinify",
+  "frontend:install": "npm install --include=dev",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "GoMinify"
+  },
+  "info": {
+    "companyName": "GoMinify",
+    "productName": "GoMinify",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026",
+    "comments": "Local JS/CSS minifier"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "notes": "首个 OTA 发布版本",
+  "pub_date": "2026-11-17T01:25:24Z",
+  "assets": {
+    "windows-amd64": {
+      "url": "https://github.com/Z-041/gominify/releases/download/v1.0.0/GoMinify-windows-amd64.exe",
+      "sha256": "d929086d178252f02a093615f63776a03d724ab6f4670acd0e4f299ac59de0e1",
+      "size": 12955136
+    }
+  },
+  "signature": "Ljp1t4mlrsIYhAICdefuDtCVKjowS1vdybMuRe9633D3kfNhoGjjoPGNRzoNyZOYlFSRd1EiUPNrNJnrJpCRAw=="
+}
