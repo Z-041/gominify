@@ -1,13 +1,28 @@
 {
-  "version": "1.0.1",
-  "notes": "新增文件夹递归压缩（保持目录结构导出）、压缩历史与最近导出目录，修复批量导出部分失败不提示的问题",
-  "pub_date": "2026-11-17T02:33:56Z",
+  "version": "1.0.2",
+  "notes": "添加结果内存释放功能并优化大文件预览  新增 Forget 后端方法释放已移除结果的内存  调整版权注释仅对 JS/CSS 生效，避免破坏 HTML/JSON 结构  实现大文件预览截断功能，防止界面卡顿  前端集成释放逻辑，在文件替换/删除时自动调用",
+  "pub_date": "2026-11-17T03:36:37Z",
   "assets": {
+    "darwin-amd64": {
+      "url": "https://github.com/Z-041/gominify/releases/download/v1.0.2/GoMinify-darwin-amd64",
+      "sha256": "e41c9761808304bf2aa9da03ab1c7b3836a0d7fe39172a869d9077909c72ce3d",
+      "size": 11105520
+    },
+    "darwin-arm64": {
+      "url": "https://github.com/Z-041/gominify/releases/download/v1.0.2/GoMinify-darwin-arm64",
+      "sha256": "a646e44b528179efd8876b79a8c49fde3a7e4b053dba1ef74bbaa0c7c223b9f1",
+      "size": 10328592
+    },
+    "linux-amd64": {
+      "url": "https://github.com/Z-041/gominify/releases/download/v1.0.2/GoMinify-linux-amd64",
+      "sha256": "f68572c71304c2b92b292831a61a94506a1dec600d347c3bb219f1202f5921af",
+      "size": 11342288
+    },
     "windows-amd64": {
-      "url": "https://github.com/Z-041/gominify/releases/download/v1.0.1/GoMinify-windows-amd64.exe",
-      "sha256": "9bc87edc9b8829d30b38d6edce446af3f46e00b0f2b32724a7d94fa7abc0a2dc",
-      "size": 13006336
+      "url": "https://github.com/Z-041/gominify/releases/download/v1.0.2/GoMinify-windows-amd64.exe",
+      "sha256": "096b2d0fc5d97b97e48f99b82c970eb578713cb8026ef9de0174169f01cf5995",
+      "size": 12553728
     }
   },
-  "signature": "hcV4sKNwH+2CQXb7qECmCDE3i9VheLBKkaT990Obt8cbS5IgpPpp3SNw3yfDowJvINDx5ubls5istbyaR83qDA=="
+  "signature": "p7K50lRHMuek5BE4oVyNulOJmkE4jQH1erVV+m57gyFIMrL7e1Yq/LTOFA2t7rjIyqjSux22i3yTbkBGGW5LCQ=="
 }
