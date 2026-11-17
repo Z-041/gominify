@@ -1,13 +1,13 @@
 {
-  "version": "1.0.0",
-  "notes": "首个 OTA 发布版本",
-  "pub_date": "2026-11-17T01:25:24Z",
+  "version": "1.0.1",
+  "notes": "新增文件夹递归压缩（保持目录结构导出）、压缩历史与最近导出目录，修复批量导出部分失败不提示的问题",
+  "pub_date": "2026-11-17T02:33:56Z",
   "assets": {
     "windows-amd64": {
-      "url": "https://github.com/Z-041/gominify/releases/download/v1.0.0/GoMinify-windows-amd64.exe",
-      "sha256": "d929086d178252f02a093615f63776a03d724ab6f4670acd0e4f299ac59de0e1",
-      "size": 12955136
+      "url": "https://github.com/Z-041/gominify/releases/download/v1.0.1/GoMinify-windows-amd64.exe",
+      "sha256": "9bc87edc9b8829d30b38d6edce446af3f46e00b0f2b32724a7d94fa7abc0a2dc",
+      "size": 13006336
     }
   },
-  "signature": "Ljp1t4mlrsIYhAICdefuDtCVKjowS1vdybMuRe9633D3kfNhoGjjoPGNRzoNyZOYlFSRd1EiUPNrNJnrJpCRAw=="
+  "signature": "hcV4sKNwH+2CQXb7qECmCDE3i9VheLBKkaT990Obt8cbS5IgpPpp3SNw3yfDowJvINDx5ubls5istbyaR83qDA=="
 }
