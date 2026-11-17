@@ -136,6 +136,7 @@ const errorLines = computed(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   background: #0e1216;
 }
 .preview-head {
@@ -239,10 +240,13 @@ const errorLines = computed(() => {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
+  overflow: hidden;
 }
 .diff-col {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
@@ -270,6 +274,7 @@ const errorLines = computed(() => {
 }
 .diff-body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 12px 14px 24px;
 }
