@@ -12,11 +12,12 @@
 
 | 模块 | 状态 |
 |---|---|
-| 压缩引擎 `internal/minifier` | ✅ 完成，8 个单测 |
+| 压缩引擎 `internal/minifier` | ✅ 完成，含目录递归展开 |
 | OTA 更新 `internal/update` | ✅ 完成，10 个单测 |
 | OTA 发布工具 `cmd/ota-publish` | ✅ 完成，可生成并签名清单 |
-| Wails 骨架 + 界面 | ✅ 可构建运行（Linux 已验证） |
-| 文件夹递归模式 / 历史记录 | ⬜ P1，待做 |
+| 压缩历史 `internal/history` | ✅ 完成，本地 JSON 持久化 + 最近导出目录 |
+| Wails 骨架 + 界面 | ✅ 可构建运行（Windows 已验证） |
+| 文件夹递归模式 / 历史记录 | ✅ 完成，导入目录保持结构导出 |
 
 ---
 
@@ -27,7 +28,8 @@ gominify/
 ├── main.go                  # Wails 入口，窗口与资源嵌入
 ├── app.go                   # 绑定给前端的 API：压缩、导出、更新
 ├── internal/
-│   ├── minifier/            # 压缩引擎封装（按扩展名路由、选项、行号提取）
+│   ├── minifier/            # 压缩引擎封装（扩展名路由、选项、目录展开、行号提取）
+│   ├── history/             # 压缩历史：本地 JSON 持久化、最近导出目录
 │   └── update/              # OTA：清单校验、签名、下载、原子替换
 ├── cmd/ota-publish/         # 发布工具：扫描产物 → 生成清单 → ed25519 签名
 ├── frontend/                # Vue 3 + TS + Vite
@@ -138,10 +140,8 @@ wails build -ldflags "-X main.Version=1.1.0 -X main.UpdateURL=https://dl.example
 - 更新只替换程序本体，不触碰用户文件
 - 单文件上限 5 MB，防止超大文件拖垮界面
 
-## 后续计划（P1）
+## 后续计划
 
-- 文件夹递归压缩并保持目录结构
-- 压缩历史与最近使用目录
 - 深色/浅色主题
 - 可选：接入 esbuild 作为 JS 压缩备选通道，进一步提升压缩率
 

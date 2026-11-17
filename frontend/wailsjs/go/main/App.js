@@ -10,8 +10,16 @@ export function CheckUpdate() {
   return window['go']['main']['App']['CheckUpdate']();
 }
 
-export function CompressFiles(arg1, arg2) {
-  return window['go']['main']['App']['CompressFiles'](arg1, arg2);
+export function ClearHistory() {
+  return window['go']['main']['App']['ClearHistory']();
+}
+
+export function CompressPaths(arg1, arg2) {
+  return window['go']['main']['App']['CompressPaths'](arg1, arg2);
+}
+
+export function GetHistory() {
+  return window['go']['main']['App']['GetHistory']();
 }
 
 export function GetVersion() {
@@ -24,6 +32,14 @@ export function OpenDir() {
 
 export function OpenFiles() {
   return window['go']['main']['App']['OpenFiles']();
+}
+
+export function OpenFolder() {
+  return window['go']['main']['App']['OpenFolder']();
+}
+
+export function Recompress(arg1, arg2) {
+  return window['go']['main']['App']['Recompress'](arg1, arg2);
 }
 
 export function SaveAll(arg1, arg2) {

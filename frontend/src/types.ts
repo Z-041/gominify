@@ -1,6 +1,8 @@
 export interface FileResult {
   id: string
   path: string
+  rootPath: string
+  relPath: string
   name: string
   language: string
   originalSize: number
@@ -11,6 +13,25 @@ export interface FileResult {
   source: string
   error: string
   line: number
+}
+
+export interface BatchResult {
+  results: FileResult[]
+  skipped: number
+  warnings: string[]
+  truncated: boolean
+}
+
+export interface HistoryEntry {
+  time: string
+  fileCount: number
+  failed: number
+  originalTotal: number
+  minifiedTotal: number
+  destDir: string
+  jsMangle: boolean
+  keepCopyright: boolean
+  cssPrecision: number
 }
 
 export interface MinifyOptions {

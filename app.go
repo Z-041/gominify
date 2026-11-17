@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"gominify/internal/history"
 	"gominify/internal/minifier"
 	"gominify/internal/update"
 
@@ -23,13 +25,12 @@ var Version = "1.0.0"
 // UpdateURL 可在构建时注入；为空则读取 GOMINIFY_UPDATE_URL，都没有则用默认地址。
 var UpdateURL = ""
 
-// maxFileSize 单文件上限 5 MB，避免大文件把界面拖死。
-const maxFileSize = 5 << 20
-
 // FileResult 是给前端展示的压缩结果（不含二进制，直接带文本）。
 type FileResult struct {
 	ID           string  `json:"id"`
 	Path         string  `json:"path"`
+	RootPath     string  `json:"rootPath"`
+	RelPath      string  `json:"relPath"`
 	Name         string  `json:"name"`
 	Language     string  `json:"language"`
 	OriginalSize int     `json:"originalSize"`
@@ -40,6 +41,14 @@ type FileResult struct {
 	Source       string  `json:"source"`
 	Error        string  `json:"error"`
 	Line         int     `json:"line"`
+}
+
+// BatchResult 是一次导入（文件 + 目录）的汇总结果。
+type BatchResult struct {
+	Results   []FileResult `json:"results"`
+	Skipped   int          `json:"skipped"`
+	Warnings  []string     `json:"warnings"`
+	Truncated bool         `json:"truncated"`
 }
 
 // UpdateInfo 是检查更新返回给前端的信息。
@@ -58,16 +67,25 @@ type UpdateProgress struct {
 	Total   int64 `json:"total"`
 }
 
+// resultEntry 保存压缩结果及其目录结构信息，供导出时还原路径。
+type resultEntry struct {
+	res  minifier.Result
+	root string
+	rel  string
+	opts minifier.Options
+}
+
 // App 是绑定给前端的后端对象。
 type App struct {
 	ctx     context.Context
 	mu      sync.Mutex
-	results map[string]*minifier.Result
+	results map[string]*resultEntry
 	seq     int
+	history *history.Store
 }
 
 func NewApp() *App {
-	return &App{results: make(map[string]*minifier.Result)}
+	return &App{results: make(map[string]*resultEntry)}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -76,40 +94,71 @@ func (a *App) startup(ctx context.Context) {
 	if exe, err := os.Executable(); err == nil {
 		update.CleanupLeftovers(exe)
 	}
+	store, err := history.Open()
+	if err != nil {
+		log.Printf("历史记录不可用，已降级为内存模式: %v", err)
+		return
+	}
+	a.history = store
 }
 
 func (a *App) shutdown(ctx context.Context) {}
 
-// CompressFiles 批量压缩。单个文件失败不会中断其余文件。
-func (a *App) CompressFiles(paths []string, opts minifier.Options) []FileResult {
-	out := make([]FileResult, 0, len(paths))
-	for _, p := range paths {
-		out = append(out, a.compressOne(p, opts))
+// CompressPaths 导入文件或目录并批量压缩。目录会递归展开，单个文件失败不影响其余文件。
+func (a *App) CompressPaths(paths []string, opts minifier.Options) BatchResult {
+	exp := minifier.Expand(paths, 0)
+	out := BatchResult{
+		Results:   make([]FileResult, 0, len(exp.Refs)),
+		Skipped:   exp.Skipped,
+		Warnings:  exp.Problems,
+		Truncated: exp.Truncated,
+	}
+	for _, ref := range exp.Refs {
+		out.Results = append(out.Results, a.compressRef(ref, opts))
 	}
 	return out
 }
 
-func (a *App) compressOne(path string, opts minifier.Options) FileResult {
-	info, err := os.Stat(path)
-	if err != nil {
-		return FileResult{ID: a.nextID("e"), Path: path, Name: filepath.Base(path), Error: "无法读取文件: " + err.Error()}
-	}
-	if info.IsDir() {
-		return FileResult{ID: a.nextID("e"), Path: path, Name: filepath.Base(path), Error: "暂不支持目录，请选择文件"}
-	}
-	if info.Size() > maxFileSize {
-		return FileResult{ID: a.nextID("e"), Path: path, Name: filepath.Base(path), Error: "文件超过 5 MB，已跳过"}
-	}
+// Recompress 按已有结果 id 重新压缩，保持 id、顺序与目录结构不变。
+func (a *App) Recompress(ids []string, opts minifier.Options) []FileResult {
+	out := make([]FileResult, 0, len(ids))
+	for _, id := range ids {
+		a.mu.Lock()
+		e, ok := a.results[id]
+		a.mu.Unlock()
+		if !ok {
+			out = append(out, FileResult{ID: id, Error: "结果不存在或已过期"})
+			continue
+		}
 
-	res := minifier.MinifyFile(path, opts)
+		res := minifier.MinifyFile(e.res.Path, opts)
+		a.mu.Lock()
+		e.res = res
+		e.opts = opts
+		a.mu.Unlock()
+		out = append(out, fileResult(id, e))
+	}
+	return out
+}
+
+func (a *App) compressRef(ref minifier.FileRef, opts minifier.Options) FileResult {
 	id := a.nextID("f")
+	entry := &resultEntry{res: minifier.MinifyFile(ref.Path, opts), root: ref.Root, rel: ref.Rel, opts: opts}
+
 	a.mu.Lock()
-	a.results[id] = &res
+	a.results[id] = entry
 	a.mu.Unlock()
 
+	return fileResult(id, entry)
+}
+
+func fileResult(id string, e *resultEntry) FileResult {
+	res := e.res
 	fr := FileResult{
 		ID:           id,
-		Path:         path,
+		Path:         res.Path,
+		RootPath:     e.root,
+		RelPath:      e.rel,
 		Name:         res.Name,
 		Language:     res.Language,
 		OriginalSize: res.OriginalSize,
@@ -144,43 +193,153 @@ func minifiedName(name string) string {
 	return base + ".min" + ext
 }
 
-// SaveResult 导出单个结果到指定目录。
-func (a *App) SaveResult(id, destDir string) (string, error) {
+// prepareTarget 计算导出路径，并返回对应的结果记录。
+func (a *App) prepareTarget(id, destDir string) (*resultEntry, string, error) {
 	a.mu.Lock()
-	res, ok := a.results[id]
+	e, ok := a.results[id]
 	a.mu.Unlock()
 	if !ok {
-		return "", fmt.Errorf("结果不存在或已过期")
+		return nil, "", fmt.Errorf("结果不存在或已过期")
 	}
-	if res.Err != nil {
-		return "", fmt.Errorf("该文件压缩失败，无法导出")
+	if e.res.Err != nil {
+		return nil, "", fmt.Errorf("该文件压缩失败，无法导出")
 	}
 	if destDir == "" {
-		destDir = filepath.Dir(res.Path)
+		destDir = filepath.Dir(e.res.Path)
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+
+	var target string
+	if e.rel == "" {
+		target = filepath.Join(destDir, minifiedName(e.res.Name))
+	} else {
+		rel := filepath.FromSlash(e.rel)
+		if !safeRel(rel) {
+			return nil, "", fmt.Errorf("相对路径无效: %s", e.rel)
+		}
+		target = filepath.Join(destDir, filepath.Base(e.root), filepath.Dir(rel), minifiedName(filepath.Base(rel)))
+	}
+
+	if !withinDir(destDir, target) {
+		return nil, "", fmt.Errorf("导出路径越界: %s", target)
+	}
+	return e, target, nil
+}
+
+// safeRel 校验相对路径不会逃逸出根目录。
+func safeRel(rel string) bool {
+	if rel == "" || rel == "." || filepath.IsAbs(rel) {
+		return false
+	}
+	clean := filepath.Clean(rel)
+	return clean != ".." && !strings.HasPrefix(clean, ".."+string(filepath.Separator))
+}
+
+// withinDir 判断 target 是否位于 dest 目录内。
+func withinDir(dest, target string) bool {
+	absDest, err := filepath.Abs(dest)
+	if err != nil {
+		return false
+	}
+	absTarget, err := filepath.Abs(target)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(absDest, absTarget)
+	if err != nil {
+		return false
+	}
+	return safeRel(rel)
+}
+
+func writeEntry(e *resultEntry, target string) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(target, e.res.Output, 0o644)
+}
+
+// recordExport 把一次成功导出写入历史，DestDir 记忆最近导出目录。
+func (a *App) recordExport(files, failed, original, minified int, destDir string, opts minifier.Options) {
+	if files == 0 || a.history == nil {
+		return
+	}
+	entry := history.Entry{
+		FileCount:     files,
+		Failed:        failed,
+		OriginalTotal: original,
+		MinifiedTotal: minified,
+		DestDir:       destDir,
+		JSMangle:      opts.JSMangle,
+		KeepCopyright: opts.KeepCopyright,
+		CSSPrecision:  opts.CSSPrecision,
+	}
+	if err := a.history.Add(entry); err != nil {
+		log.Printf("写入历史失败: %v", err)
+	}
+}
+
+// SaveResult 导出单个结果到指定目录。
+func (a *App) SaveResult(id, destDir string) (string, error) {
+	e, target, err := a.prepareTarget(id, destDir)
+	if err != nil {
 		return "", err
 	}
-	target := filepath.Join(destDir, minifiedName(res.Name))
-	if err := os.WriteFile(target, res.Output, 0o644); err != nil {
+	if err := writeEntry(e, target); err != nil {
 		return "", err
 	}
+	dir := destDir
+	if dir == "" {
+		dir = filepath.Dir(e.res.Path)
+	}
+	a.recordExport(1, 0, e.res.OriginalSize, e.res.MinifiedSize, dir, e.opts)
 	return target, nil
 }
 
-// SaveAll 批量导出成功的结果，返回成功数量。
+// SaveAll 批量导出成功的结果，返回成功数量；部分失败会返回聚合错误。
 func (a *App) SaveAll(ids []string, destDir string) (int, error) {
 	saved := 0
-	var lastErr error
+	var original, minified int
+	var firstOpts minifier.Options
+	actualDir := destDir
+	seen := make(map[string]bool)
+	var problems []string
+
 	for _, id := range ids {
-		if _, err := a.SaveResult(id, destDir); err != nil {
-			lastErr = err
+		e, target, err := a.prepareTarget(id, destDir)
+		if err != nil {
+			problems = append(problems, err.Error())
 			continue
 		}
+		key := target
+		if runtime.GOOS == "windows" {
+			key = strings.ToLower(key)
+		}
+		if seen[key] {
+			problems = append(problems, fmt.Sprintf("%s: 目标文件冲突（%s）", e.res.Name, filepath.Base(target)))
+			continue
+		}
+		seen[key] = true
+
+		if err := writeEntry(e, target); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", e.res.Name, err))
+			continue
+		}
+		if saved == 0 {
+			firstOpts = e.opts
+			if actualDir == "" {
+				actualDir = filepath.Dir(e.res.Path)
+			}
+		}
 		saved++
+		original += e.res.OriginalSize
+		minified += e.res.MinifiedSize
 	}
-	if saved == 0 && lastErr != nil {
-		return 0, lastErr
+
+	if saved > 0 {
+		a.recordExport(saved, len(problems), original, minified, actualDir, firstOpts)
+	}
+	if len(problems) > 0 {
+		return saved, fmt.Errorf("已导出 %d 个，失败 %d 个：%s", saved, len(problems), strings.Join(problems, "；"))
 	}
 	return saved, nil
 }
@@ -195,9 +354,33 @@ func (a *App) OpenFiles() ([]string, error) {
 	})
 }
 
-// OpenDir 选择导出目录。
+// OpenFolder 选择要压缩的文件夹。
+func (a *App) OpenFolder() (string, error) {
+	return wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{Title: "选择要压缩的文件夹"})
+}
+
+// OpenDir 选择导出目录，默认定位到上次导出的目录。
 func (a *App) OpenDir() (string, error) {
-	return wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{Title: "选择导出目录"})
+	defaultDir := ""
+	if last := a.history.LastDir(); last != "" {
+		if info, err := os.Stat(last); err == nil && info.IsDir() {
+			defaultDir = last
+		}
+	}
+	return wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{
+		Title:            "选择导出目录",
+		DefaultDirectory: defaultDir,
+	})
+}
+
+// GetHistory 返回压缩历史（最新在前）。
+func (a *App) GetHistory() []history.Entry {
+	return a.history.List()
+}
+
+// ClearHistory 清空压缩历史。
+func (a *App) ClearHistory() error {
+	return a.history.Clear()
 }
 
 // GetVersion 返回当前版本。

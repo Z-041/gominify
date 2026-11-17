@@ -1,16 +1,47 @@
 <script setup lang="ts">
+import { computed, reactive } from 'vue'
 import Icon from './Icon.vue'
 import { formatSize, formatRatio } from '../highlight'
 import type { FileResult } from '../types'
 
-defineProps<{ files: FileResult[]; selectedId: string }>()
+const props = defineProps<{ files: FileResult[]; selectedId: string }>()
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'remove', id: string): void
   (e: 'add'): void
+  (e: 'add-folder'): void
 }>()
 
+interface Group {
+  key: string
+  root: string
+  name: string
+  files: FileResult[]
+}
+
+const groups = computed<Group[]>(() => {
+  const map = new Map<string, Group>()
+  for (const f of props.files) {
+    const key = f.rootPath || ''
+    let g = map.get(key)
+    if (!g) {
+      g = { key, root: f.rootPath, name: f.rootPath ? baseName(f.rootPath) : '', files: [] }
+      map.set(key, g)
+    }
+    g.files.push(f)
+  }
+  return [...map.values()]
+})
+
+const collapsed = reactive<Record<string, boolean>>({})
+
+const toggle = (key: string) => {
+  collapsed[key] = !collapsed[key]
+}
+
+const baseName = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 const ext = (f: FileResult) => (f.language === 'js' ? 'JS' : f.language === 'css' ? 'CSS' : f.language === 'html' ? 'HTML' : 'JSON')
+const displayName = (f: FileResult) => (f.rootPath ? f.relPath || f.name : f.name)
 </script>
 
 <template>
@@ -18,40 +49,54 @@ const ext = (f: FileResult) => (f.language === 'js' ? 'JS' : f.language === 'css
     <div class="sidebar-head">
       待处理文件
       <span class="count">{{ files.length }}</span>
-      <button class="add" title="添加文件" @click="emit('add')"><Icon name="add" :size="17" /></button>
-    </div>
-
-    <div class="file-list">
-      <div
-        v-for="f in files"
-        :key="f.id"
-        class="file-row"
-        :class="{ active: f.id === selectedId, error: !!f.error }"
-        @click="emit('select', f.id)"
-      >
-        <div class="file-icon" :class="f.error ? 'err' : f.language">
-          <Icon v-if="f.error" name="error" :size="15" />
-          <template v-else>{{ ext(f) }}</template>
-        </div>
-        <div class="file-meta">
-          <div class="file-name">{{ f.name }}</div>
-          <div v-if="!f.error" class="file-sub">
-            {{ formatSize(f.originalSize) }} <span class="arrow">→</span>
-            <span class="after">{{ formatSize(f.minifiedSize) }}</span>
-          </div>
-          <div v-else class="file-sub">
-            <span class="fail">压缩失败{{ f.line ? ` · 第 ${f.line} 行` : '' }}</span>
-          </div>
-        </div>
-        <div class="rate" :class="{ err: !!f.error }">{{ f.error ? '失败' : formatRatio(f.ratio) }}</div>
-        <button class="icon-btn remove" title="移除" @click.stop="emit('remove', f.id)">
-          <Icon name="close" :size="14" />
-        </button>
+      <div class="head-actions">
+        <button class="add" title="添加文件夹" @click="emit('add-folder')"><Icon name="folder" :size="16" /></button>
+        <button class="add" title="添加文件" @click="emit('add')"><Icon name="add" :size="17" /></button>
       </div>
     </div>
 
+    <div class="file-list">
+      <template v-for="g in groups" :key="g.key">
+        <div v-if="g.root" class="group-head" :title="g.root" @click="toggle(g.key)">
+          <Icon name="chevron" :size="11" class="chev" :class="{ collapsed: collapsed[g.key] }" />
+          <Icon name="folder" :size="14" class="group-icon" />
+          <span class="group-name">{{ g.name }}</span>
+          <span class="group-count">{{ g.files.length }}</span>
+        </div>
+        <template v-if="!g.root || !collapsed[g.key]">
+          <div
+            v-for="f in g.files"
+            :key="f.id"
+            class="file-row"
+            :class="{ active: f.id === selectedId, error: !!f.error, nested: !!g.root }"
+            :title="f.path"
+            @click="emit('select', f.id)"
+          >
+            <div class="file-icon" :class="f.error ? 'err' : f.language">
+              <Icon v-if="f.error" name="error" :size="15" />
+              <template v-else>{{ ext(f) }}</template>
+            </div>
+            <div class="file-meta">
+              <div class="file-name">{{ displayName(f) }}</div>
+              <div v-if="!f.error" class="file-sub">
+                {{ formatSize(f.originalSize) }} <span class="arrow">→</span>
+                <span class="after">{{ formatSize(f.minifiedSize) }}</span>
+              </div>
+              <div v-else class="file-sub">
+                <span class="fail">压缩失败{{ f.line ? ` · 第 ${f.line} 行` : '' }}</span>
+              </div>
+            </div>
+            <div class="rate" :class="{ err: !!f.error }">{{ f.error ? '失败' : formatRatio(f.ratio) }}</div>
+            <button class="icon-btn remove" title="移除" @click.stop="emit('remove', f.id)">
+              <Icon name="close" :size="14" />
+            </button>
+          </div>
+        </template>
+      </template>
+    </div>
+
     <div class="sidebar-foot">
-      <div class="drop-hint" @click="emit('add')">拖入文件或点击添加</div>
+      <div class="drop-hint" @click="emit('add')">拖入文件/文件夹或点击添加</div>
     </div>
   </aside>
 </template>
@@ -70,7 +115,7 @@ const ext = (f: FileResult) => (f.language === 'js' ? 'JS' : f.language === 'css
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 14px;
+  padding: 0 10px 0 14px;
   border-bottom: 1px solid var(--border);
   font-size: 12px;
   color: var(--text-2);
@@ -84,8 +129,12 @@ const ext = (f: FileResult) => (f.language === 'js' ? 'JS' : f.language === 'css
   padding: 1px 6px;
   border-radius: 10px;
 }
-.add {
+.head-actions {
   margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+.add {
   width: 24px;
   height: 24px;
   border-radius: 5px;
@@ -106,6 +155,42 @@ const ext = (f: FileResult) => (f.language === 'js' ? 'JS' : f.language === 'css
   overflow-y: auto;
   padding: 6px;
 }
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px 5px;
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 11.5px;
+  user-select: none;
+}
+.group-head:hover {
+  color: var(--text);
+}
+.chev {
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+.chev.collapsed {
+  transform: rotate(-90deg);
+}
+.group-icon {
+  flex-shrink: 0;
+  color: var(--yellow);
+}
+.group-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.group-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-3);
+}
 .file-row {
   display: flex;
   align-items: center;
@@ -115,6 +200,9 @@ const ext = (f: FileResult) => (f.language === 'js' ? 'JS' : f.language === 'css
   cursor: pointer;
   border: 1px solid transparent;
   margin-bottom: 2px;
+}
+.file-row.nested {
+  margin-left: 10px;
 }
 .file-row:hover {
   background: var(--panel-2);

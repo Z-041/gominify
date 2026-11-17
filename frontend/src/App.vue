@@ -4,6 +4,7 @@ import FileList from './components/FileList.vue'
 import PreviewPanel from './components/PreviewPanel.vue'
 import OptionsDrawer from './components/OptionsDrawer.vue'
 import UpdateDialog from './components/UpdateDialog.vue'
+import HistoryDialog from './components/HistoryDialog.vue'
 import Icon from './components/Icon.vue'
 import {
   compress,
@@ -12,6 +13,8 @@ import {
   onFileDrop,
   openDir,
   openFiles,
+  openFolder,
+  recompress,
   saveAll,
   saveResult,
 } from './composables/useBackend'
@@ -22,6 +25,7 @@ const files = ref<FileResult[]>([])
 const selectedId = ref('')
 const drawerOpen = ref(false)
 const updateOpen = ref(false)
+const historyOpen = ref(false)
 const version = ref('1.0.0')
 const busy = ref(false)
 const dragging = ref(false)
@@ -59,7 +63,8 @@ async function addPaths(paths: string[]) {
   if (!paths.length || busy.value) return
   busy.value = true
   try {
-    const results = await compress(paths, { ...options })
+    const batch = await compress(paths, { ...options })
+    const results = batch.results
     for (const r of results) {
       const idx = files.value.findIndex((f) => f.path === r.path)
       if (idx >= 0) files.value.splice(idx, 1, r)
@@ -67,7 +72,19 @@ async function addPaths(paths: string[]) {
     }
     const firstOk = results.find((r) => !r.error)
     selectedId.value = firstOk?.id ?? results[0]?.id ?? selectedId.value
-    toast(`已处理 ${results.length} 个文件`)
+
+    if (!results.length) {
+      toast(batch.warnings[0] ?? '没有找到可压缩的文件')
+      return
+    }
+    const parts = [`已处理 ${results.length} 个文件`]
+    if (batch.skipped) parts.push(`跳过 ${batch.skipped} 个不支持的文件`)
+    if (batch.truncated) parts.push('已达单次导入上限')
+    if (batch.warnings.length) {
+      const extra = batch.warnings.length > 1 ? ` 等 ${batch.warnings.length} 条` : ''
+      parts.push(batch.warnings[0] + extra)
+    }
+    toast(parts.join(' · '))
   } catch (e: any) {
     toast('压缩失败：' + String(e?.message ?? e))
   } finally {
@@ -84,15 +101,28 @@ async function pickFiles() {
   }
 }
 
+async function pickFolder() {
+  if (!isWails()) {
+    toast('浏览器预览模式不支持文件夹')
+    return
+  }
+  const dir = await openFolder()
+  if (dir) await addPaths([dir])
+}
+
 async function recompressAll() {
-  const paths = files.value.map((f) => f.path)
-  if (!paths.length) return
+  const ids = files.value.map((f) => f.id)
+  if (!ids.length) return
   busy.value = true
   try {
-    const results = await compress(paths, { ...options })
+    const results = await recompress(ids, { ...options })
     files.value = results
-    selectedId.value = results.find((r) => !r.error)?.id ?? results[0]?.id ?? ''
+    if (!results.some((r) => r.id === selectedId.value)) {
+      selectedId.value = results.find((r) => !r.error)?.id ?? results[0]?.id ?? ''
+    }
     toast('已按当前选项重新压缩')
+  } catch (e: any) {
+    toast('重新压缩失败：' + String(e?.message ?? e))
   } finally {
     busy.value = false
   }
@@ -169,6 +199,7 @@ onMounted(async () => {
       <div class="tb-sub">{{ subtitle }}</div>
 
       <div class="spacer"></div>
+      <button class="btn btn-ghost" @click="historyOpen = true"><Icon name="clock" :size="15" />历史</button>
       <button class="btn" @click="drawerOpen = true"><Icon name="tune" :size="15" />压缩选项</button>
       <button class="ver-chip" title="软件更新" @click="updateOpen = true">
         <span class="dot-ver" :class="{ hot: updateOpen }"></span>v{{ version }}
@@ -184,6 +215,7 @@ onMounted(async () => {
         @select="selectedId = $event"
         @remove="removeFile"
         @add="pickFiles"
+        @add-folder="pickFolder"
       />
 
       <PreviewPanel v-if="selected" :file="selected" @copy="copyResult" @export="exportOne" />
@@ -192,10 +224,10 @@ onMounted(async () => {
       <section v-if="!files.length" class="empty">
         <div class="empty-inner" :class="{ dragging }" @click="pickFiles">
           <div class="empty-icon"><Icon name="upload" :size="28" /></div>
-          <div class="empty-title">拖入文件，即刻压缩</div>
+          <div class="empty-title">拖入文件或文件夹，即刻压缩</div>
           <div class="empty-desc">
-            支持 JS / CSS / HTML / JSON，可一次拖入多个文件<br />
-            或 <b>点击选择文件</b>，结果不会离开你的电脑
+            支持 JS / CSS / HTML / JSON，可一次拖入多个文件或整个目录<br />
+            或 <b>点击选择文件</b> / <b class="link" @click.stop="pickFolder">选择文件夹</b>，结果不会离开你的电脑
           </div>
           <div class="chips">
             <span class="chip">.js</span><span class="chip">.css</span><span class="chip">.html</span><span class="chip">.json</span>
@@ -228,6 +260,7 @@ onMounted(async () => {
 
     <OptionsDrawer :open="drawerOpen" :options="options" @close="drawerOpen = false" @apply="applyOptions" />
     <UpdateDialog :open="updateOpen" :version="version" @close="updateOpen = false" />
+    <HistoryDialog :open="historyOpen" @close="historyOpen = false" />
 
     <div class="toast" :class="{ show: toastVisible }">{{ toastText }}</div>
   </div>
@@ -361,6 +394,10 @@ onMounted(async () => {
 .empty-desc b {
   color: var(--accent);
   font-weight: 500;
+}
+.empty-desc b.link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .chips {
   display: flex;

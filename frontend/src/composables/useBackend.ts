@@ -1,4 +1,4 @@
-import type { FileResult, MinifyOptions, UpdateInfo, UpdateProgress } from '../types'
+import type { BatchResult, FileResult, HistoryEntry, MinifyOptions, UpdateInfo, UpdateProgress } from '../types'
 
 /** Wails 注入的运行时对象；浏览器里直接打开时为空，走 mock。 */
 const rt = () => (window as any).runtime
@@ -38,6 +38,15 @@ export async function openDir(): Promise<string> {
   }
 }
 
+export async function openFolder(): Promise<string> {
+  if (!api()) return ''
+  try {
+    return (await api().OpenFolder()) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 export async function getVersion(): Promise<string> {
   if (!api()) return '1.0.0'
   try {
@@ -47,11 +56,19 @@ export async function getVersion(): Promise<string> {
   }
 }
 
-export async function compress(paths: string[], opts: MinifyOptions): Promise<FileResult[]> {
+export async function compress(paths: string[], opts: MinifyOptions): Promise<BatchResult> {
   if (api()) {
-    return (await api().CompressFiles(paths, opts)) ?? []
+    const batch = await api().CompressPaths(paths, opts)
+    return { results: [], skipped: 0, warnings: [], truncated: false, ...(batch ?? {}) }
   }
-  return mockCompress(paths)
+  return { results: await mockCompress(paths), skipped: 0, warnings: [], truncated: false }
+}
+
+export async function recompress(ids: string[], opts: MinifyOptions): Promise<FileResult[]> {
+  if (api()) {
+    return (await api().Recompress(ids, opts)) ?? []
+  }
+  return mockRecompress(ids)
 }
 
 export async function saveResult(id: string, dir: string): Promise<string> {
@@ -62,6 +79,20 @@ export async function saveResult(id: string, dir: string): Promise<string> {
 export async function saveAll(ids: string[], dir: string): Promise<number> {
   if (!api()) return ids.length
   return await api().SaveAll(ids, dir)
+}
+
+export async function getHistory(): Promise<HistoryEntry[]> {
+  if (!api()) return []
+  try {
+    return (await api().GetHistory()) ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function clearHistory(): Promise<void> {
+  if (!api()) return
+  await api().ClearHistory()
 }
 
 export async function checkUpdate(): Promise<UpdateInfo> {
@@ -125,10 +156,12 @@ const cssMinified =
 const jsMinified =
   'function add(n,t){return n+t}const cache=new Map;async function load(n){if(cache.has(n))return cache.get(n);const t=await fetch(n),e=await t.json();return cache.set(n,e),e}export{add,load};'
 
+let mockLast: FileResult[] = []
+
 async function mockCompress(paths: string[]): Promise<FileResult[]> {
   await sleep(280)
   const list = paths.length ? paths : ['app.css', 'vendor.js']
-  return list.map((p, i) => {
+  mockLast = list.map((p, i) => {
     const isJS = /\.m?js$/i.test(p)
     const output = isJS ? jsMinified : cssMinified
     const original = isJS ? jsMinified.length * 2.6 : cssOriginal.length
@@ -136,6 +169,8 @@ async function mockCompress(paths: string[]): Promise<FileResult[]> {
     return {
       id: `mock-${i}-${Date.now()}`,
       path: p,
+      rootPath: '',
+      relPath: '',
       name,
       language: isJS ? 'js' : 'css',
       originalSize: Math.round(original),
@@ -148,4 +183,12 @@ async function mockCompress(paths: string[]): Promise<FileResult[]> {
       line: 0,
     }
   })
+  return mockLast
+}
+
+async function mockRecompress(ids: string[]): Promise<FileResult[]> {
+  await sleep(120)
+  return ids
+    .map((id) => mockLast.find((f) => f.id === id))
+    .filter((f): f is FileResult => !!f)
 }

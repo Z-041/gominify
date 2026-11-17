@@ -117,53 +117,6 @@ async function startUpdate() {
 </template>
 
 <style scoped>
-.modal-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-}
-.modal {
-  width: 460px;
-  background: var(--panel);
-  border: 1px solid var(--border-2);
-  border-radius: 12px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
-  overflow: hidden;
-}
-.modal-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--border);
-}
-.head-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background: var(--accent-dim);
-  border: 1px solid rgba(78, 143, 247, 0.3);
-  color: #7fb0ff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.modal-title {
-  font-size: 13.5px;
-  font-weight: 600;
-}
-.modal-sub {
-  font-size: 11px;
-  color: var(--text-3);
-  margin-top: 2px;
-}
-.modal-body {
-  padding: 16px 18px;
-}
 .ver-row {
   display: flex;
   align-items: center;
@@ -225,13 +178,5 @@ async function startUpdate() {
   height: 100%;
   background: linear-gradient(90deg, var(--accent), var(--green));
   transition: width 0.2s;
-}
-.modal-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 18px;
-  border-top: 1px solid var(--border);
-  background: #0d1014;
 }
 </style>
